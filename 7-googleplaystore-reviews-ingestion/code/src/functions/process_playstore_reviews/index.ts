@@ -64,7 +64,8 @@ export const run = async (events: any[]) => {
     // Call google playstore scraper to fetch those number of reviews.
     let getReviewsResponse:any = await gplay.reviews({
       appId: inputs['app_id'],
-      sort: gplay.sort.RATING,
+      country: 'in',
+      sort: gplay.sort.NEWEST,
       num: numReviews,
       throttle: 10,
     });
@@ -87,6 +88,17 @@ export const run = async (events: any[]) => {
       const reviewText = `Ticket created from Playstore review ${review.url}\n\n${review.text}`;
       const reviewTitle = review.title || `Ticket created from Playstore review ${review.url}`;
       const reviewID = review.id;
+      const reviewVote=review.thumbsUp;
+      let reviewSeverity: publicSDK.TicketSeverity;
+      if (reviewVote<10){
+        reviewSeverity=publicSDK.TicketSeverity.Low;
+      }
+      else if(reviewVote<100){
+        reviewSeverity=publicSDK.TicketSeverity.Medium;
+      }
+      else{
+        reviewSeverity=publicSDK.TicketSeverity.High;
+      }
       const systemPrompt = `You are an expert at labelling a given Google Play Store Review as bug, feature_request, question or feedback. You are given a review provided by a user for the app ${inputs['app_id']}. You have to label the review as bug, feature_request, question or feedback. The output should be a JSON with fields "category" and "reason". The "category" field should be one of "bug", "feature_request", "question" or "feedback". The "reason" field should be a string explaining the reason for the category. \n\nReview: {review}\n\nOutput:`;
       const humanPrompt = ``;
 
@@ -112,6 +124,7 @@ export const run = async (events: any[]) => {
         type: publicSDK.WorkType.Ticket,
         owned_by: [inputs['default_owner_id']],
         applies_to_part: inputs['default_part_id'],
+        severity:reviewSeverity,
       });
       if (!createTicketResp.success) {
         console.error(`Error while creating ticket: ${createTicketResp.message}`);
