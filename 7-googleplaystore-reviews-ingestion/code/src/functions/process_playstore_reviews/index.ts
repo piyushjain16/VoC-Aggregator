@@ -65,7 +65,7 @@ export const run = async (events: any[]) => {
     let getReviewsResponse:any = await gplay.reviews({
       appId: inputs['app_id'],
       country: 'in',
-      sort: gplay.sort.NEWEST,
+      sort: gplay.sort.HELPFULNESS,
       num: numReviews,
       throttle: 10,
     });
