@@ -1,4 +1,4 @@
-import { client, publicSDK } from '@devrev/typescript-sdk';
+import { client, publicSDK} from '@devrev/typescript-sdk';
 import { AxiosResponse } from 'axios';
 
 export type HTTPResponse = {
@@ -49,6 +49,23 @@ export class ApiUtils {
     } catch (error: any) {
       if (error.response) {
         const err = `Failed to create ticket. Err: ${JSON.stringify(error.response.data)}, Status: ${
+          error.response.status
+        }`;
+        return { ...defaultResponse, message: err };
+      } else {
+        return { ...defaultResponse, message: error.message };
+      }
+    }
+  }
+
+  // Create a issue
+  async createIssue(payload: publicSDK.WorksCreateRequest): Promise<HTTPResponse> {
+    try {
+      const response: AxiosResponse = await this.devrevSdk.worksCreate(payload);
+      return { data: response.data, message: 'Issue created successfully', success: true };
+    } catch (error: any) {
+      if (error.response) {
+        const err = `Failed to create Issue. Err: ${JSON.stringify(error.response.data)}, Status: ${
           error.response.status
         }`;
         return { ...defaultResponse, message: err };

@@ -124,7 +124,7 @@ export const run = async (events: any[]) => {
         type: publicSDK.WorkType.Ticket,
         owned_by: [inputs['default_owner_id']],
         applies_to_part: inputs['default_part_id'],
-        severity:reviewSeverity,
+        severity:reviewSeverity, 
       });
       if (!createTicketResp.success) {
         console.error(`Error while creating ticket: ${createTicketResp.message}`);
@@ -136,6 +136,28 @@ export const run = async (events: any[]) => {
       const postTicketResp: HTTPResponse  = await apiUtil.postTextMessageWithVisibilityTimeout(snapInId, ticketCreatedMessage, 1);
       if (!postTicketResp.success) {
         console.error(`Error while creating timeline entry: ${postTicketResp.message}`);
+        continue;
+      }
+      // Create a issue with title as review title and description as review text.
+      const createIssueResp = await apiUtil.createIssue({
+        title: reviewTitle,
+        tags: [{id: tags[inferredCategory].id}],
+        body: reviewText,
+        type: publicSDK.WorkType.Issue,
+        owned_by: [inputs['default_owner_id']],
+        applies_to_part: inputs['default_part_id'],
+        priority:publicSDK.IssuePriority.P1,
+      });
+      if (!createIssueResp.success) {
+        console.error(`Error while creating Issue: ${createIssueResp.message}`);
+        continue;
+      }
+      // Post a message with Issue ID.
+      const issueID = createIssueResp.data.work.id;
+      const issueCreatedMessage = inferredCategory != 'failed_to_infer_category' ? `Created issue: <${issueID}> and it is categorized as ${inferredCategory}` : `Created issue: <${issueID}> and it failed to be categorized`;
+      const postIssueResp: HTTPResponse  = await apiUtil.postTextMessageWithVisibilityTimeout(snapInId, issueCreatedMessage, 1);
+      if (!postIssueResp.success) {
+        console.error(`Error while creating timeline entry: ${postIssueResp.message}`);
         continue;
       }
     }
