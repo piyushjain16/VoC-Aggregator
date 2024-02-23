@@ -1,9 +1,9 @@
 version: "2"
-name: "Google playstore reviews to Tickets"
-description: "Creates tickets from Google playstore reviews and categorize them into one-of `bug`, `feedback`, `feature_request` or `question`."
+name: "Blinkit reviews to Tickets"
+description: "Creates tickets from reviews and categorize them into one-of `bug`, `feedback`, `feature_request` or `question`."
 
 service_account:
-  display_name: Google Playstore Reviews Snap-in
+  display_name: Blinkit Reviews Snap-in
 
 keyrings:
   organization:
@@ -12,6 +12,11 @@ keyrings:
       types:
         - snap_in_secret
       display_name: Fireworks API Key
+    - name: Twitter_api_key
+      description: API Key for Twitter Scraper, follow https://rapidapi.com/omarmhaimdat/api/twitter154 to get one.
+      types:
+        - snap_in_secret
+      display_name: Twitter API Key
 
 inputs:
   organization:
@@ -114,3 +119,5 @@ commands:
 functions:
   - name: process_playstore_reviews
     description: Fetches reviews from Google Playstore and creates tickets
+  - name: process_twitter_reviews
+    description: Fetches reviews from Twitter and creates tickets
