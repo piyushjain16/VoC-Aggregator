@@ -114,6 +114,15 @@ commands:
           - snap_in
     usage_hint: "/playstore_reviews_process [number of reviews to fetch and process]"
     function: process_playstore_reviews
+  - name: twitter_reviews_process
+    namespace: devrev
+    description: Fetches reviews from Twitter and creates tickets
+    surfaces:
+      - surface: discussions
+        object_types:
+          - snap_in
+    usage_hint: "/twitter_reviews_process [number of reviews to fetch and process]"
+    function: process_twitter_reviews
 
 
 functions:
