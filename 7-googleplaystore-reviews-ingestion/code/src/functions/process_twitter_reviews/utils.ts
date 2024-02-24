@@ -13,6 +13,16 @@ export const defaultResponse: HTTPResponse = {
   success: false,
 };
 
+export interface UniqueReviewData{
+  reviewdata: ReviewData[];
+}
+export interface ReviewData{
+  review:string;
+  totalvotes:number;
+  totalreviews:number;
+}
+
+
 export class ApiUtils {
   public devrevSdk!: publicSDK.Api<HTTPResponse>;
 

@@ -99,7 +99,7 @@ export const run = async (events: any[]) => {
       else{
         reviewSeverity=publicSDK.TicketSeverity.High;
       }
-      const systemPrompt = `You are an expert at labelling a given Google Play Store Review as bug, feature_request, question or feedback. You are given a review provided by a user for the app ${inputs['app_id']}. You have to label the review as bug, feature_request, question or feedback. The output should be a JSON with fields "category" and "reason". The "category" field should be one of "bug", "feature_request", "question" or "feedback". The "reason" field should be a string explaining the reason for the category. \n\nReview: {review}\n\nOutput:`;
+      const systemPrompt = `You are an expert at labelling a given Google Play Store Review as bug, feature_request, question, positive_feedback or negative_feedback. You are given a review provided by a user for the app ${inputs['app_id']}. You have to label the review as bug, feature_request, question, positive_feedback or negative_feedback. The output should be a JSON with fields "category" and "reason". The "category" field should be one of "bug", "feature_request", "question","positive_feedback" or "negative_feedback". The "reason" field should be a string explaining the reason for the category. \n\nReview: {review}\n\nOutput:`;
       const humanPrompt = ``;
 
       let llmResponse = {};
@@ -115,6 +115,9 @@ export const run = async (events: any[]) => {
         if (!(inferredCategory in tags)) {
           inferredCategory = 'failed_to_infer_category';
         }
+        // if(inferredCategory=='positive_feedback'){
+        //   continue;
+        // }
       }
       // Create a ticket with title as review title and description as review text.
       const createTicketResp = await apiUtil.createTicket({

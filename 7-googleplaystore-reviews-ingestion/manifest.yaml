@@ -98,8 +98,10 @@ tags:
     description: "This is a feature request"
   - name: question
     description: "This is a question"
-  - name: feedback
-    description: "This is a feedback"
+  - name: positive_feedback
+    description: "This is a positive feedback"
+  - name: negative_feedback
+    description: "This is a negative feedback"
   - name: failed_to_infer_category
     description: "Failed to infer category"
 
