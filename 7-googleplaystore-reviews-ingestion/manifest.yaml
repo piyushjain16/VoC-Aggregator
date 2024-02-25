@@ -1,9 +1,9 @@
 version: "2"
-name: "Blinkit reviews to Tickets"
-description: "Creates tickets from reviews and categorize them into one-of `bug`, `feedback`, `feature_request` or `question`."
+name: "App reviews to Tickets and Issues"
+description: "Creates tickets/Issues from reviews by processing them using AI."
 
 service_account:
-  display_name: Blinkit Reviews Snap-in
+  display_name: App Reviews Snap-in
 
 keyrings:
   organization:
@@ -20,6 +20,13 @@ keyrings:
 
 inputs:
   organization:
+    - name: app_name
+      description: "The name of the application."
+      field_type: text
+      is_required: true
+      default_value: ""
+      ui:
+        display_name: Application name
     - name: app_id
       description: "The Google Play id of the application (the ?id= parameter on the url)."
       field_type: text
@@ -56,6 +63,8 @@ tags:
     description: "This is a feature request"
   - name: question
     description: "This is a question"
+  - name: logistics_experience
+    description: "This is a logistics experience"
   - name: positive_feedback
     description: "This is a positive feedback"
   - name: negative_feedback
@@ -67,7 +76,7 @@ tags:
 commands:
   - name: playstore_reviews_process
     namespace: devrev
-    description: Fetches reviews from Google Playstore and creates tickets
+    description: Fetches reviews from Google Playstore and creates tickets and issues.
     surfaces:
       - surface: discussions
         object_types:
@@ -76,12 +85,12 @@ commands:
     function: process_playstore_reviews
   - name: twitter_reviews_process
     namespace: devrev
-    description: Fetches reviews from Twitter and creates tickets
+    description: Fetches reviews from Twitter and creates tickets and issues.
     surfaces:
       - surface: discussions
         object_types:
           - snap_in
-    usage_hint: "/twitter_reviews_process [number of reviews to fetch and process]"
+    usage_hint: "/twitter_reviews_process [hashtag/search] [search parameter] [number of reviews to fetch and process]"
     function: process_twitter_reviews
 
 

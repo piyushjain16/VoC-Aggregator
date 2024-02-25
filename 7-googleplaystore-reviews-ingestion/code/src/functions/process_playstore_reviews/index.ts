@@ -92,7 +92,7 @@ export const run = async (events: any[]) => {
       const reviewID = review.id;
       const reviewVote=review.thumbsUp;
       // remove meaningless reviews
-      let systemPrompt = `You are an expert at classifying a given Review as relevant or irrelevant.Any review related to customer request, customer service,app service,complain, feedback,question,bug,product issue should be classified as relevant .You have to label the review as true if it is relevant or false if it is irrelevant. The output should be a JSON with fields "relevance" and "reason". The "relevance" field should be one of "true" or "false". The "reason" field should be a string explaining the reason for the relevance. \n\nReview: {review}\n\nOutput:`;
+      let systemPrompt = `You are an expert at classifying a given App Review as relevant or irrelevant.You are given a review provided by a user for the app ${inputs['app_name']}.Any review related to customer service,app service,complain, feedback,question,bug,issue should be classified as relevant .You have to label the review as true if it is relevant or false if it is irrelevant. The output should be a JSON with fields "relevance" and "reason". The "relevance" field should be one of "true" or "false". The "reason" field should be a string explaining the reason for the relevance. \n\nReview: {review}\n\nOutput:`;
       let humanPrompt = ``;
       let llmResponse = {};
       let relevant:boolean=true ;
@@ -108,7 +108,7 @@ export const run = async (events: any[]) => {
         }
       }
       //check duplicate reviews
-      systemPrompt = `You are an expert at classifying a given App Review as duplicate or unique. You are given a review provided by a user for the app ${inputs['app_id']} and a list containing previous reviews from the database. Your task is to label the review as duplicate if its context matches with any past review from the database, or false if it has a unique context.
+      systemPrompt = `You are an expert at classifying a given App Review as duplicate or unique. You are given a review provided by a user for the app ${inputs['app_name']} and a list containing previous reviews from the database. Your task is to label the review as duplicate if its context matches with any past review from the database, or false if it has a unique context.
 
       Instructions:
       
@@ -149,7 +149,7 @@ export const run = async (events: any[]) => {
         }
       }
       //genrate title and gist of reviews
-      systemPrompt = `You are an expert at summarizing a given App Review in title and summary. You are provided with a review for the app Blinkit. Your goal is to generate a concise title for the review and a summary that includes essential information only. The output should be a JSON with fields "title" and "summary".
+      systemPrompt = `You are an expert at summarizing a given App Review in title and summary. You are provided with a review for the app ${inputs['app_name']}. Your goal is to generate a concise title for the review and a summary that includes essential information only. The output should be a JSON with fields "title" and "summary".
 
       Instructions:
       
@@ -176,7 +176,7 @@ export const run = async (events: any[]) => {
         review_summary=llmResponse['summary'] as string;
       }
       // tagging the review.
-      systemPrompt = `You are an expert at labelling a given App Review as bug, feature_request, question,customer_support, positive_feedback or negative_feedback. You are given a review provided by a user for the app ${inputs['app_id']}. You have to label the review as bug, feature_request, question, customer_support, positive_feedback or negative_feedback. The output should be a JSON with fields "category" and "reason". The "category" field should be one of "bug", "feature_request", "question", "customer_support", "positive_feedback" or "negative_feedback". The "reason" field should be a string explaining the reason for the category. \n\nReview: {review}\n\nOutput:`;
+      systemPrompt = `You are an expert at labelling a given App Review as bug, feature_request, question,logistics_experience, positive_feedback or negative_feedback. You are given a review provided by a user for the app ${inputs['app_name']}. You have to label the review as bug, feature_request, question, logistics_experience, positive_feedback or negative_feedback. The output should be a JSON with fields "category" and "reason". The "category" field should be one of "bug", "feature_request", "question", "logistics_experience", "positive_feedback" or "negative_feedback". The "reason" field should be a string explaining the reason for the category. \n\nReview: {review}\n\nOutput:`;
       humanPrompt = ``;
       llmResponse = {};
       try {
@@ -197,7 +197,86 @@ export const run = async (events: any[]) => {
         totalvotes:reviewVote,
         totalreviews:1
       })
-      if (inferredCategory=='bug'){
+      // Post a progress message saying creating ticket for review with review URL posted.
+      postResp  = await apiUtil.postTextMessageWithVisibilityTimeout(snapInId, `Creating ticket for review: ${review.id}`, 1);
+      if (!postResp.success) {
+        console.error(`Error while creating timeline entry: ${postResp.message}`);
+        continue;
+      }
+      let reviewSeverity:publicSDK.TicketSeverity;
+      if(inferredCategory=='positive_feedback'){
+        reviewSeverity=publicSDK.TicketSeverity.Blocker;
+      }
+      else if(inferredCategory=="feature_request" || inferredCategory=="question"){
+        reviewSeverity=publicSDK.TicketSeverity.Low;
+      }
+      else if(inferredCategory=='negative_feedback' || inferredCategory=='logistics_experience'){
+        reviewSeverity=publicSDK.TicketSeverity.Medium;
+      }
+      else {
+        reviewSeverity=publicSDK.TicketSeverity.High;
+      }
+      // Create a ticket with title as review title and description as review text.
+      const createTicketResp = await apiUtil.createTicket({
+        title: review_title,
+        tags: [{id: tags[inferredCategory].id}],
+        body: review_summary+"\n"+review.url,
+        type: publicSDK.WorkType.Ticket,
+        owned_by: [inputs['default_owner_id']],
+        applies_to_part: inputs['default_part_id'],
+        severity:reviewSeverity,
+        // source_channel:"product",
+      });
+      if (!createTicketResp.success) {
+        console.error(`Error while creating ticket: ${createTicketResp.message}`);
+        continue;
+      }
+      // Post a message with ticket ID.
+      const ticketID = createTicketResp.data.work.id;
+      const ticketCreatedMessage = inferredCategory != 'failed_to_infer_category' ? `Created ticket: <${ticketID}> and it is categorized as ${inferredCategory}` : `Created ticket: <${ticketID}> and it failed to be categorized`;
+      const postTicketResp: HTTPResponse  = await apiUtil.postTextMessageWithVisibilityTimeout(snapInId, ticketCreatedMessage, 1);
+      if (!postTicketResp.success) {
+        console.error(`Error while creating timeline entry: ${postTicketResp.message}`);
+        continue;
+      }
+      if(reviewSeverity!=publicSDK.TicketSeverity.Blocker){
+        let issuepriority:publicSDK.IssuePriority;
+        if(reviewSeverity==publicSDK.TicketSeverity.Low){
+          issuepriority=publicSDK.IssuePriority.P3;
+        }
+        else if(reviewSeverity==publicSDK.TicketSeverity.Medium){
+          issuepriority=publicSDK.IssuePriority.P2;
+        }
+        else{
+          issuepriority=publicSDK.IssuePriority.P1;
+        }
+        //genrate title and gist of reviews
+        systemPrompt = `You are an expert at summarizing a given App Review in title and summary. You are provided with a review for the app ${inputs['app_name']}. Your goal is to generate a concise title for the review and a summary that includes essential information only. The output should be a JSON with fields "title" and "summary".
+
+        Instructions:
+        
+        1. The title should succinctly describe solution for the main topic or issue raised in the review.
+        2. The summary should include relevant information only, removing any irrelevant parts, emojis, punctuation, or lines describing the writer's sentiment.
+        3. Use Third-Person perspective (like a system addressing the product designer) perspective in the summary.
+        
+        Review:{review}
+        
+        Output:`
+        humanPrompt = ``;
+        llmResponse = {};
+        let issue_title:string='';
+        let issue_summary:string='';
+        try {
+          llmResponse = await llmUtil.chatCompletion(systemPrompt, humanPrompt, {review: reviewText});
+        } catch (err) {
+          console.error(`Error while calling LLM: ${err}`);
+        }
+        if ('title' in llmResponse) {
+          issue_title= llmResponse['title'] as string;
+        }
+        if ('summary' in llmResponse){
+          issue_summary=llmResponse['summary'] as string;
+        }
         // Post a progress message saying creating issue for review with review URL posted.
         postResp  = await apiUtil.postTextMessageWithVisibilityTimeout(snapInId, `Creating issue for review: ${review.id}`, 1);
         if (!postResp.success) {
@@ -206,13 +285,13 @@ export const run = async (events: any[]) => {
         }
         // Create a issue with title as review title and description as review text.
         const createIssueResp = await apiUtil.createIssue({
-          title: review_title,
+          title: issue_title+"Ticket ID:"+ticketID,
           tags: [{id: tags[inferredCategory].id}],
-          body: review_summary+"\n"+review.url,
+          body: issue_summary+"\n"+review.url,
           type: publicSDK.WorkType.Issue,
           owned_by: [inputs['default_owner_id']],
           applies_to_part: inputs['default_part_id'],
-          // priority:publicSDK.IssuePriority.P1,
+          priority:issuepriority,
         });
         if (!createIssueResp.success) {
           console.error(`Error while creating Issue: ${createIssueResp.message}`);
@@ -226,37 +305,7 @@ export const run = async (events: any[]) => {
           console.error(`Error while creating timeline entry: ${postIssueResp.message}`);
           continue;
         }
-      }
-      else{
-        // Post a progress message saying creating ticket for review with review URL posted.
-        postResp  = await apiUtil.postTextMessageWithVisibilityTimeout(snapInId, `Creating ticket for review: ${review.id}`, 1);
-        if (!postResp.success) {
-          console.error(`Error while creating timeline entry: ${postResp.message}`);
-          continue;
-        }
-        // Create a ticket with title as review title and description as review text.
-        const createTicketResp = await apiUtil.createTicket({
-          title: review_title,
-          tags: [{id: tags[inferredCategory].id}],
-          body: review_summary+"\n"+review.url,
-          type: publicSDK.WorkType.Ticket,
-          owned_by: [inputs['default_owner_id']],
-          applies_to_part: inputs['default_part_id'],
-          // source_channel:"product",
-        });
-        if (!createTicketResp.success) {
-          console.error(`Error while creating ticket: ${createTicketResp.message}`);
-          continue;
-        }
-        // Post a message with ticket ID.
-        const ticketID = createTicketResp.data.work.id;
-        const ticketCreatedMessage = inferredCategory != 'failed_to_infer_category' ? `Created ticket: <${ticketID}> and it is categorized as ${inferredCategory}` : `Created ticket: <${ticketID}> and it failed to be categorized`;
-        const postTicketResp: HTTPResponse  = await apiUtil.postTextMessageWithVisibilityTimeout(snapInId, ticketCreatedMessage, 1);
-        if (!postTicketResp.success) {
-          console.error(`Error while creating timeline entry: ${postTicketResp.message}`);
-          continue;
-        }
-      }      
+      }     
     }
     // Call an LLM to categorize the review as Bug, Feature request, or Question.
   }
