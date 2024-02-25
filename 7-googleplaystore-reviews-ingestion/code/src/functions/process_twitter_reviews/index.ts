@@ -11,7 +11,7 @@ export const run = async (events: any[]) => {
   for (const event of events) {
     const endpoint: string = event.execution_metadata.devrev_endpoint;
     const token: string = event.context.secrets.service_account_token;
-    const fireWorksApiKey: string = event.input_data.keyrings.fireworks_api_key;
+    const openaiApiKey: string = event.input_data.keyrings.openai_api_key;
     const twitterApiKey: string = event.input_data.keyrings.twitter_api_key;
     const apiUtil: ApiUtils = new ApiUtils(endpoint, token);
     // Get the number of reviews to fetch from command args.
@@ -21,7 +21,7 @@ export const run = async (events: any[]) => {
     const inputs = event.input_data.global_values;
     let parameters:string = event.payload.parameters.trim();
     const tags = event.input_data.resources.tags;
-    const llmUtil: LLMUtils = new LLMUtils(fireWorksApiKey, `accounts/fireworks/models/${inputs['llm_model_to_use']}`, 200);
+    const llmUtil: LLMUtils = new LLMUtils(openaiApiKey, `gpt-3.5-turbo-0125`, 200);
     const minReviewSize:number=3;
     let numReviews = 10;
     let commentID : string | undefined;
@@ -44,9 +44,9 @@ export const run = async (events: any[]) => {
       // Default to 10 reviews.
       parameters = '10';
     }
+    let parameter=parameters.split(" ",3);
     try {
-      numReviews = parseInt(parameters);
-
+      numReviews = parseInt(parameter[2]);
       if (!Number.isInteger(numReviews)) {
         throw new Error('Not a valid number');
       }
@@ -67,9 +67,17 @@ export const run = async (events: any[]) => {
       }
       commentID = postResp.data.timeline_entry.id;
     }
-    // Call twitter scraper to fetch those number of reviews.
-    const Hashtag:string='blinkitsupport';
-    let getReviewsResponse:any = await getHashtagData(Hashtag,numReviews);
+    let getReviewsResponse:any;
+    if (parameter[0]=='hashtag'){
+      // Call twitter scraper to fetch those number of reviews.
+      const Hashtag:string=parameter[1];
+      getReviewsResponse = await getHashtagData(Hashtag,numReviews);
+    }
+    else if (parameter[0]=='search'){
+      // Call twitter scraper to fetch those number of reviews.
+      const searchtweet:string=parameter[1];
+      getReviewsResponse= await getSearchData(searchtweet,numReviews,'2022-01-01');
+    }
     // Post an update about the number of reviews fetched.
     postResp  = await apiUtil.postTextMessageWithVisibilityTimeout(snapInId, `Fetched ${numReviews} reviews, creating tickets now.`, 1);
     if (!postResp.success) {
@@ -81,16 +89,8 @@ export const run = async (events: any[]) => {
 
     let unique_reviews:string[]=[];
     let unique_reviews_data:UniqueReviewData={reviewdata:[]};
-    let i=1;
     // process each review . clustering the reviews and generating tickets and issues .
     for(const review of reviews) {
-      // Post an update about the number of reviews fetched.
-      postResp  = await apiUtil.postTextMessageWithVisibilityTimeout(snapInId, `processing ${i} reviews now.\nreview :${review.text}`, 1);
-      if (!postResp.success) {
-        console.error(`Error while creating timeline entry: ${postResp.message}`);
-        continue;
-      }
-      i++;
       // removing short reviews
       if(review.text.length<=minReviewSize){
         continue;
@@ -101,21 +101,22 @@ export const run = async (events: any[]) => {
       const reviewUrl="https://twitter.com/"+review.user.username+"/status/"+reviewID;
       const reviewVote=review.favorite_count;
       // remove meaningless reviews
-      let systemPrompt = `You are an expert at classifying a given App Review as relevant or irrelevant. You are given a review provided by a user for the app ${inputs['app_id']}. You have to label the review as true if it is relevant or false if it is irrelevant. The output should be a JSON with fields "relevance" and "reason". The "relevance" field should be one of "true" or "false". The "reason" field should be a string explaining the reason for the relevance. \n\nReview: {review}\n\nOutput:`;
+      let systemPrompt = `You are an expert at classifying a given Review as relevant or irrelevant.Any review related to customer request, customer service,app service,complain, feedback,question,bug,product issue should be classified as relevant .You have to label the review as true if it is relevant or false if it is irrelevant. The output should be a JSON with fields "relevance" and "reason". The "relevance" field should be one of "true" or "false". The "reason" field should be a string explaining the reason for the relevance. \n\nReview: {review}\n\nOutput:`;
       let humanPrompt = ``;
       let llmResponse = {};
       let relevant:boolean = true;
       try {
-        llmResponse = await llmUtil.chatCompletion(systemPrompt, humanPrompt, {review: reviewText});
-        if ('relevance' in llmResponse) {
-          relevant= llmResponse['relevance'] as boolean;
-        }
+        llmResponse = await llmUtil.chatCompletion(systemPrompt, humanPrompt, {review: review.text});
       } catch (err) {
         console.error(`Error while calling LLM: ${err}`);
       }
-      if (!(relevant)) {
-        continue;
+      if ('relevance' in llmResponse) {
+        relevant= (llmResponse['relevance']==="true") as boolean;
+        if (!relevant) {
+          continue;
+        }
       }
+      
       //check duplicate reviews
       systemPrompt = `You are an expert at classifying a given App Review as duplicate or unique. You are given a review provided by a user for the app ${inputs['app_id']} and a list containing previous reviews from the database. Your task is to label the review as duplicate if its context matches with any past review from the database, or false if it has a unique context.
 
@@ -138,31 +139,25 @@ export const run = async (events: any[]) => {
 
       humanPrompt = ``;
       llmResponse = {};
-      let is_duplicate:boolean = true;
+      let is_duplicate:boolean = false;
       try {
-        llmResponse = await llmUtil.chatCompletion(systemPrompt, humanPrompt, {past_reviews:unique_reviews,review: reviewText});
-        if ('is_duplicate' in llmResponse) {
-          is_duplicate= llmResponse['is_duplicate'] as boolean;
-        }  
+        llmResponse = await llmUtil.chatCompletion(systemPrompt, humanPrompt, {past_reviews:unique_reviews,review: review.text}); 
       } catch (err) {
         console.error(`Error while calling LLM: ${err}`);
       }
-      if (is_duplicate) {
-        if ('match_with' in llmResponse){
-          let index:number=llmResponse['match_with'] as number;
-          if (index>=0 && index<unique_reviews_data.reviewdata.length){
-            unique_reviews_data.reviewdata[index].totalreviews++;
-            unique_reviews_data.reviewdata[index].totalvotes+=reviewVote;
+      if ('is_duplicate' in llmResponse) {
+        is_duplicate= (llmResponse['is_duplicate']==="true") as boolean;
+        if (is_duplicate) {
+          if ('match_with' in llmResponse){
+            let index:number=parseInt(llmResponse['match_with'] as string);
+            if (index>=0 && index<unique_reviews_data.reviewdata.length){
+              unique_reviews_data.reviewdata[index].totalreviews++;
+              unique_reviews_data.reviewdata[index].totalvotes+=reviewVote;
+            }
           }
+          continue;
         }
-        continue;
       }
-      postResp  = await apiUtil.postTextMessageWithVisibilityTimeout(snapInId, `processing ${i} reviews now.review is not irrelevant and unique.\nreview :${review.text}`, 1);
-      if (!postResp.success) {
-        console.error(`Error while creating timeline entry: ${postResp.message}`);
-        continue;
-      }
-
       //genrate title and gist of reviews
       systemPrompt = `You are an expert at summarizing a given App Review in title and summary. You are provided with a review for the app Blinkit. Your goal is to generate a concise title for the review and a summary that includes essential information only. The output should be a JSON with fields "title" and "summary".
 
@@ -181,14 +176,14 @@ export const run = async (events: any[]) => {
       let review_summary:string='';
       try {
         llmResponse = await llmUtil.chatCompletion(systemPrompt, humanPrompt, {review: reviewText});
-        if ('title' in llmResponse) {
-          review_title= llmResponse['title'] as string;
-        }
-        if ('summary' in llmResponse){
-          review_summary=llmResponse['summary'] as string;
-        }
       } catch (err) {
         console.error(`Error while calling LLM: ${err}`);
+      }
+      if ('title' in llmResponse) {
+        review_title= llmResponse['title'] as string;
+      }
+      if ('summary' in llmResponse){
+        review_summary=llmResponse['summary'] as string;
       }
       // tagging the review.
       systemPrompt = `You are an expert at labelling a given App Review as bug, feature_request, question, positive_feedback or negative_feedback. You are given a review provided by a user for the app ${inputs['app_id']}. You have to label the review as bug, feature_request, question, positive_feedback or negative_feedback. The output should be a JSON with fields "category" and "reason". The "category" field should be one of "bug", "feature_request", "question","positive_feedback" or "negative_feedback". The "reason" field should be a string explaining the reason for the category. \n\nReview: {review}\n\nOutput:`;
@@ -209,15 +204,12 @@ export const run = async (events: any[]) => {
           continue;
         }
       }
-
       unique_reviews.push(review_summary);
       unique_reviews_data.reviewdata.push({
         review:review_summary,
         totalvotes:reviewVote,
         totalreviews:1
       })
-
-      
       if (inferredCategory=='bug'){
         // Post a progress message saying creating issue for review with review URL posted.
         postResp  = await apiUtil.postTextMessageWithVisibilityTimeout(snapInId, `Creating issue for review: ${review.tweet_id}`, 1);
@@ -233,7 +225,7 @@ export const run = async (events: any[]) => {
           type: publicSDK.WorkType.Issue,
           owned_by: [inputs['default_owner_id']],
           applies_to_part: inputs['default_part_id'],
-          priority:publicSDK.IssuePriority.P1,
+          // priority:publicSDK.IssuePriority.P1,
         });
         if (!createIssueResp.success) {
           console.error(`Error while creating Issue: ${createIssueResp.message}`);

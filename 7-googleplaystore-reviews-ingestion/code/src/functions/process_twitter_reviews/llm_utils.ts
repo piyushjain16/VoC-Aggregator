@@ -4,17 +4,23 @@ import {
   SystemMessagePromptTemplate,
   HumanMessagePromptTemplate,
 } from "@langchain/core/prompts";
-import { ChatFireworks } from "@langchain/community/chat_models/fireworks";
+// import { ChatFireworks } from "@langchain/community/chat_models/fireworks";
+import { Runnable } from "@langchain/core/runnables";
+import { ChatOpenAI } from "@langchain/openai";
 
 export class LLMUtils {
-  public provider!: ChatFireworks;
+  public provider!: Runnable;
 
   // Constructor to initialize SDK instances
-  constructor(fireworksApiKey: string, modelName: string, maxTokens: number) {
-    this.provider = new ChatFireworks({
-      fireworksApiKey: fireworksApiKey,
+  constructor(openAIApiKey: string, modelName: string, maxTokens: number) {
+    this.provider = new ChatOpenAI({
+      openAIApiKey: openAIApiKey,
       modelName: modelName,
       maxTokens: maxTokens,
+    }).bind({
+      response_format:{
+        type:'json_object',
+      },
     });
   }
 
