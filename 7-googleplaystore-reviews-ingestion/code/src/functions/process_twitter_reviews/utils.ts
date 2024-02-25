@@ -22,6 +22,7 @@ export interface ReviewData{
   totalreviews:number;
 }
 
+
 export class ApiUtils {
   public devrevSdk!: publicSDK.Api<HTTPResponse>;
 
