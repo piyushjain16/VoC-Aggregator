@@ -49,6 +49,3 @@ This project is licensed under the [MIT License](LICENSE).
 ## Contact
 
 For any inquiries or support, please contact [16piyush03jain@gmail.com.com](mailto:16piyush03jain@gmail.com).
-
----
-Feel free to reach out if you need any additional information or have further questions!
